@@ -2,9 +2,10 @@ _APP_NAME="holly.sh"
 _APP_VERSION="0.1"
 
 _RANDSTR_LOWER_WORDS="abcdefghijkmnoprstuvwxyz"
-_RANDSTR_UPPER_WORDS="ABCDEFGHJKMNPQRSTUVWXYZ"
+_RANDSTR_UPPER_WORDS="ABCDEFGHJKLMNPQRSTUVWXYZ"
 _RANDSTR_NUMBERS="23456789"
-_RANDSTR_SYMBOLS='@*[]<>._-+()&%$#!{}:;~=/'
+#_RANDSTR_SYMBOLS='@*[]<>._-+()&%$#!{}:;~=/'
+_RANDSTR_SYMBOLS='@[]<>._-+()&%$#!{}:;~=/'
 
 _FG_RED="\e[31m"
 _FG_GREEN="\e[32m"
@@ -424,9 +425,14 @@ function _rand_string_from_list() {
     local list=$1
     local length=$2
     local str=""
-    for i in $(seq 0 $((length - 1))); do
+    while [[ $length -ne $(len $str) ]]; do
         local offset=$(($RANDOM % $(len $list)))
-        str="${str}$(slice $list $offset 1)"
+        local char=$(slice $list $offset 1)
+        local pattern="${char}+"
+        if [[ "$str" =~ $pattern ]]; then
+            continue
+        fi
+        str="${str}${char}"
     done
     echo $str
 }
