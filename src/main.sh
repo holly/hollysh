@@ -24,6 +24,10 @@ _FMT_PB=$(($_FMT_TB * 1024))
 _FMT_EB=$(($_FMT_PB * 1024))
 _FMT_DECPTS=2
 
+# 0:no inplace  1:inplace  2:backup and inplace
+_FILE_INPLACE_MODE=0
+_FILE_TAB2SPACE_LENGTH=4
+
 _DEFAULT_RANDSTR_LENGTH=12
 _DEFAULT_COMMENT="#"
 _DEFAULT_HTTPS_PORT=443
@@ -64,14 +68,14 @@ function error() {
 
     local str=$1
     fg_red $str
-    exit 1
+    return 1
 }
 
 function error2() {
 
     local str=$1
     bg_red $str
-    exit 1
+    return 1
 }
 
 function vartype() {
@@ -80,7 +84,7 @@ function vartype() {
     if [[ -z "$var" ]]; then
         echo "null"
     elif [[ "$var" =~ ^\-?[0-9]+$ ]]; then
-        echo "number"
+        echo "int"
     elif [[ "$var" =~ ^\-?[0-9]+\.[0-9]+$ ]]; then
         echo "float"
     else
@@ -93,6 +97,21 @@ function check_dependency() {
 
     local cmd=$(getdata "$@")
     which $cmd >/dev/null 2>&1
+}
+
+function has_bom() {
+
+    if is_stdin; then
+        stdin | perl -CSDL -nle 'BEGIN{ $exit = 1 }{ $exit = 0 if /^\x{feff}/; exit $exit }'
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            perl -CSDL -nle 'BEGIN{ $exit = 1} { $exit = 0 if /^\x{feff}/; exit $exit }' $file
+        else
+            error "argument is not file."
+        fi
+    fi
 }
 
 function is_stdin() {
@@ -195,21 +214,23 @@ function ltrim() {
 
 function arrayjoin() {
 
-	local sep=$1
-	shift;
-	local arr=("$@")
-	(local IFS=$sep; echo "${arr[*]}")
+    local sep=$1
+    shift;
+    local arr=("$@")
+    (local IFS=$sep; echo "${arr[*]}")
 }
 
 # file functions
 function guess() {
-    local file=$1
-    if [[ -f $file ]]; then
-        # -0777 is slurp mode
-        # -CSDL is https://pointoht.ti-da.net/e8367529.html
-        perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -CSDL -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : "unknown"; say $guess' $file
+    if is_stdin; then
+        stdin | perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess'
     else
-        error "argument is not file."
+        if [[ -f $1 ]]; then
+            local file=$1
+            perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess' $file
+        else
+            error "argument is not file."
+        fi
     fi
 
 }
@@ -222,7 +243,13 @@ function del_empty_lines() {
         if [[ -f $1 ]]; then
             # for file
             local file=$1
-            sed "/^$/d" $file
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y$m%d)"
+            fi
+            sed $inplace_opt "/^$/d" $file
         else
             error "argument is not file."
         fi
@@ -232,33 +259,113 @@ function del_empty_lines() {
 function del_comment_lines() {
 
     if is_stdin; then
-        stdin | sed -e "s/^${_DEFAULT_COMMENT}.*$//g" 
+        stdin | sed -e "s/^${_DEFAULT_COMMENT}.*$//g"
     else
         if [[ -f $1 ]]; then
             # for file
             local file=$1
-            sed -e "s/^${_DEFAULT_COMMENT}.*$//g" $file
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y$m%d)"
+            fi
+            sed $inplace_opt -e "s/^${_DEFAULT_COMMENT}.*$//g" $file
         else
             error "argument is not file."
         fi
     fi
 
+}
+
+function del_bom() {
+
+    if is_stdin; then
+        # -0777 is slurp mode
+        # -CSDL is https://pointoht.ti-da.net/e8367529.html
+        stdin | perl -0777 -CSDL -nlpe "s/^\x{feff}//"
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y%m%d)"
+            fi
+            perl $inplace_opt -CSDL -nlpe 's/^\x{feff}//' $file
+        else
+            error "argument is not file."
+        fi
+    fi
 }
 
 function align_linefeed() {
 
     if is_stdin; then
-        stdin | perl -nlpe "s/\r\n/\n/g; s/\r//g" 
+        stdin | perl $inplace_opt -nlpe 's/\x0d\x0a/\n/g; s/\x0d/\n/g'
     else
         if [[ -f $1 ]]; then
             # for file
             local file=$1
-        	perl -nlpe "s/\r\n/\n/g; s/\r//g" $file
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y%m%d)"
+            fi
+            perl $inplace_opt -nlpe 's/\x0d\x0a/\n/g; s/\x0d/\n/g' $file
         else
             error "argument is not file."
         fi
     fi
 }
+
+function to_utf8() {
+
+    if is_stdin; then
+        stdin | perl -MEncode -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "utf8")'
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y%m%d)"
+            fi
+            perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "utf8")' $file
+        else
+            error "argument is not file."
+        fi
+    fi
+}
+
+function to_sjis() {
+
+    if is_stdin; then
+        stdin | perl -MEncode -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "shiftjis")'
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y%m%d)"
+            fi
+            perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "shiftjis")' $file
+        else
+            error "argument is not file."
+        fi
+    fi
+}
+
+
+
 
 # date functions
 function today() {
@@ -340,22 +447,21 @@ function urldecode() {
 
 function querystring() {
 
-	local k=""
-	local pairs=()
-	local i=0
-	for a in "$@"; do
-
-		if [[ $i -eq 0 ]]; then
-			k=$a
-			i=$(($i + 1))
-		elif [[ $i -eq 1 ]]; then
-			local v=$(urlencode "$a")
-			pairs+=("${k}=$v")
-			k=""
-			i=0
-		fi
-	done
-	arrayjoin "&" "${pairs[@]}"
+    local k=""
+    local pairs=()
+    local i=0
+    for a in "$@"; do
+        if [[ $i -eq 0 ]]; then
+            k=$a
+            i=$(($i + 1))
+        elif [[ $i -eq 1 ]]; then
+            local v=$(urlencode "$a")
+            pairs+=("${k}=$v")
+            k=""
+            i=0
+        fi
+    done
+    arrayjoin "&" "${pairs[@]}"
 }
 
 function http_auth_string() {
@@ -380,6 +486,16 @@ function http_ua_string() {
 function http_ua_header() {
 
     echo "User-Agent: $(http_ua_string)"
+}
+
+function http_perf() {
+    local url=$1
+    json=$(_curlw $url | jq "." )
+	(
+    for k in remote_ip http_code size_download size_upload speed_download speed_upload time_namelookup time_connect time_appconnect time_redirect time_pretransfer time_starttransfer time_total; do
+		echo "$k" $(echo $json | jq -r ".$k")
+	done
+	) | column --table --table-columns WRITE-OUT,VALUE
 }
 
 ## openssl functions
@@ -416,7 +532,7 @@ function bg_color() {
     bg_${color} $*
 }
 
-bg_blue () {
+function bg_blue () {
 
     echo -e "${_BG_BLUE}$*${_COLOR_RESET}"
 }
@@ -463,14 +579,14 @@ function fg_yellow () {
 
 ################################################
 
-if check_dependency yum && is_executable_sudo; then
+if check_dependency yum && is_sudo_executable; then
     function yum() {
         bg_yellow "override yum by $_APP_NAME. auto sudo execution..."
         sudo yum $@
     }
 fi
 
-if check_dependency apt && is_executable_sudo; then
+if check_dependency apt && is_sudo_executable; then
     function apt() {
         bg_yellow "override apt by $_APP_NAME. auto sudo execution..."
         sudo apt $@
@@ -493,6 +609,6 @@ alias curl="curl -H \"$(http_ua_header)\""
 alias get="curl -XGET "
 alias post="curl -XPOST "
 alias put="curl -XPUT "
-alias _curlw="curl -w '${json}'"
+alias _curlw="curl -sfL -o /dev/null -w '%{json}'"
 alias tmux='tmux -u'
 alias ta='tmux attach'

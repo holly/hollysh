@@ -6,7 +6,7 @@ ADD_LINE1="## add holly.sh load settings to your .bashrc or .zshrc"
 ADD_LINE2="export HOLLYSH=\$HOME/hollysh"
 ADD_LINE3="source \$HOLLYSH/holly.sh"
 DEPENDENCY_COMMANDS=(bc curl make strace git jq nc)
-DEPENDENCY_COMMANDS=(batcat rg)
+DEPENDENCY_COMMANDS2=(batcat rg)
 
 echo "# check dependency commands: ${DEPENDENCY_COMMANDS[@]}"
 for cmd in ${DEPENDENCY_COMMANDS[@]}; do
@@ -26,6 +26,7 @@ if [[ -d $INSTALL_DIR ]]; then
     pushd $INSTALL_DIR
     git pull origin main
     pushd
+    . $HOLLYSH/holly.sh
     echo 
     echo "update success. exit."
     exit
