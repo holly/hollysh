@@ -25,7 +25,7 @@ if [[ -d $INSTALL_DIR ]]; then
     echo "WARN: $INSTALL_DIR directory is already exists. update holly.sh."
     pushd $INSTALL_DIR
     git pull origin main
-    pushd
+    popd
     . $HOLLYSH/holly.sh
     echo 
     echo "update success. exit."
