@@ -488,6 +488,16 @@ function http_ua_header() {
     echo "User-Agent: $(http_ua_string)"
 }
 
+function http_perf() {
+    local url=$1
+    json=$(_curlw $url | jq "." )
+	(
+    for k in remote_ip http_code size_download size_upload speed_download speed_upload time_namelookup time_connect time_appconnect time_redirect time_pretransfer time_starttransfer time_total; do
+		echo "$k" $(echo $json | jq -r ".$k")
+	done
+	) | column --table --table-columns WRITE-OUT,VALUE
+}
+
 ## openssl functions
 function expires_cert() {
 
