@@ -1,6 +1,8 @@
 _APP_NAME="holly.sh"
 _APP_VERSION="0.1"
 
+_APP_CACHE_DIR="$HOME/.cache/hollysh"
+
 _RANDSTR_LOWER_WORDS="abcdefghijkmnoprstuvwxyz"
 _RANDSTR_UPPER_WORDS="ABCDEFGHJKLMNPQRSTUVWXYZ"
 _RANDSTR_NUMBERS="23456789"
@@ -25,74 +27,20 @@ _FMT_PB=$(($_FMT_TB * 1024))
 _FMT_EB=$(($_FMT_PB * 1024))
 _FMT_DECPTS=2
 
+_SYUKUJITSU_CSV="https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv"
+
 # 0:no inplace  1:inplace  2:backup and inplace
-_FILE_INPLACE_MODE=0
-_FILE_TAB2SPACE_LENGTH=4
+_DEFAULT_FILE_INPLACE_MODE=0
+_DEFAULT_FILE_TAB2SPACE_LENGTH=4
 
 _DEFAULT_RANDSTR_LENGTH=12
 _DEFAULT_COMMENT="#"
 _DEFAULT_HTTPS_PORT=443
 
-# utility functions
-function abs2rel() {
-    local file=$1
-    echo $(cd $(dirname $file) && pwd)/$(basename $file)
-}
+if [[ -d "$_APP_CACHE_DIR" ]]; then
+	mkdir -p $_APP_CACHE_DIR
 
-
-function stdin() {
-    cat 
-}
-
-function getdata() {
-    if is_stdin; then
-       stdin
-    elif [ $# -ne 0 ]; then
-        echo $1
-    fi
-}
-
-function slice() {
-
-    local str=$1
-    local offset=$2
-    local length=$3
-    echo ${str:$offset:$length}
-}
-
-function len() {
-    local str=$(getdata "$@")
-    echo ${#str}
-}
-
-function error() {
-
-    local str=$1
-    fg_red $str
-    return 1
-}
-
-function error2() {
-
-    local str=$1
-    bg_red $str
-    return 1
-}
-
-function vartype() {
-
-    local var=$(getdata "$@")
-    if [[ -z "$var" ]]; then
-        echo "null"
-    elif [[ "$var" =~ ^\-?[0-9]+$ ]]; then
-        echo "int"
-    elif [[ "$var" =~ ^\-?[0-9]+\.[0-9]+$ ]]; then
-        echo "float"
-    else
-        echo "string"
-    fi
-}
-
+fi
 # check functions
 function check_dependency() {
 
@@ -160,6 +108,68 @@ function is_leap_year() {
         return 0
     else
         return 1
+    fi
+}
+
+
+
+# utility functions
+function abs2rel() {
+    local file=$1
+    echo $(cd $(dirname $file) && pwd)/$(basename $file)
+}
+
+
+function stdin() {
+    cat 
+}
+
+function getdata() {
+    if is_stdin; then
+       stdin
+    elif [ $# -ne 0 ]; then
+        echo $1
+    fi
+}
+
+function slice() {
+
+    local str=$1
+    local offset=$2
+    local length=$3
+    echo ${str:$offset:$length}
+}
+
+function len() {
+    local str=$(getdata "$@")
+    echo ${#str}
+}
+
+function error() {
+
+    local str=$1
+    fg_red $str
+    return 1
+}
+
+function error2() {
+
+    local str=$1
+    bg_red $str
+    return 1
+}
+
+function vartype() {
+
+    local var=$(getdata "$@")
+    if [[ -z "$var" ]]; then
+        echo "null"
+    elif [[ "$var" =~ ^\-?[0-9]+$ ]]; then
+        echo "int"
+    elif [[ "$var" =~ ^\-?[0-9]+\.[0-9]+$ ]]; then
+        echo "float"
+    else
+        echo "string"
     fi
 }
 
@@ -245,9 +255,9 @@ function del_empty_lines() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAUKT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y$m%d)"
             fi
             sed $inplace_opt "/^$/d" $file
@@ -266,9 +276,9 @@ function del_comment_lines() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y$m%d)"
             fi
             sed $inplace_opt -e "s/^${_DEFAULT_COMMENT}.*$//g" $file
@@ -290,9 +300,9 @@ function del_bom() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y%m%d)"
             fi
             perl $inplace_opt -CSDL -nlpe 's/^\x{feff}//' $file
@@ -332,9 +342,9 @@ function to_utf8() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y%m%d)"
             fi
             perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "utf8")' $file
@@ -353,9 +363,9 @@ function to_sjis() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y%m%d)"
             fi
             perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "shiftjis")' $file
