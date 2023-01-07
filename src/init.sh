@@ -71,7 +71,7 @@ function is_empty_dir() {
     if [[ ! -d $dir ]]; then
         return 1
     fi
-    local res=$(ls $dir)
+    local res=$(ls -A $dir)
     if [[ -z "$res" ]]; then
         return 0
     fi
