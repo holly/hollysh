@@ -600,7 +600,7 @@ function http_auth_header() {
 
     local user=$1
     local password=$2
-    echo Authorization: Basic $(make_basic_auth_string $user $password)
+    echo Authorization: Basic $(http_auth_string $user $password)
 }
 
 
