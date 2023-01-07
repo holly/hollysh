@@ -1,6 +1,8 @@
 _APP_NAME="holly.sh"
 _APP_VERSION="0.1"
 
+_APP_CACHE_DIR="$HOME/.cache/hollysh"
+
 _RANDSTR_LOWER_WORDS="abcdefghijkmnoprstuvwxyz"
 _RANDSTR_UPPER_WORDS="ABCDEFGHJKLMNPQRSTUVWXYZ"
 _RANDSTR_NUMBERS="23456789"
@@ -25,13 +27,107 @@ _FMT_PB=$(($_FMT_TB * 1024))
 _FMT_EB=$(($_FMT_PB * 1024))
 _FMT_DECPTS=2
 
+_SYUKUJITSU_CSV="https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv"
+_SYUKUJITSU_LOCAL_CSV="$_APP_CACHE_DIR/$(basename $_SYUKUJITSU_CSV)"
+
 # 0:no inplace  1:inplace  2:backup and inplace
-_FILE_INPLACE_MODE=0
-_FILE_TAB2SPACE_LENGTH=4
+_DEFAULT_FILE_INPLACE_MODE=0
+_DEFAULT_FILE_TAB2SPACE_LENGTH=4
 
 _DEFAULT_RANDSTR_LENGTH=12
 _DEFAULT_COMMENT="#"
+_DEFAULT_HOLIDAY_YEARS=$(date +%Y)
+_DEFAULT_LEAP_YEAR_MAX=2100
+_DEFAULT_LEAP_YEAR_MIN=1900
 _DEFAULT_HTTPS_PORT=443
+_DEFAULT_TTL=$((60 * 60))
+
+# check functions
+function check_dependency() {
+
+    local cmd=$(getdata "$@")
+    which $cmd >/dev/null 2>&1
+}
+
+function has_bom() {
+
+    if is_stdin; then
+        stdin | perl -CSDL -nle 'BEGIN{ $exit = 1 }{ $exit = 0 if /^\x{feff}/; exit $exit }'
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            perl -CSDL -nle 'BEGIN{ $exit = 1} { $exit = 0 if /^\x{feff}/; exit $exit }' $file
+        else
+            error "argument is not file."
+        fi
+    fi
+}
+
+
+function is_empty_dir() {
+
+    local dir=$1
+    if [[ ! -d $dir ]]; then
+        return 1
+    fi
+    local res=$(ls -A $dir)
+    if [[ -z "$res" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+function is_holiday() {
+
+    local ymd=$1
+    ymd=${ymd:-$(date "+%Y/%m/%d")}
+    local weekday_name=$(LANG=C date +%a -d "$ymd")
+    if [[ $weekday_name = "Sat" ]] || [[ $weekday_name = "Sun" ]] || syukujitsu_csv | egrep "^$ymd"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+function is_leap_year() {
+
+    local year=$1
+    year=${year:-$(date "+%Y")}
+
+    if  [[ $(($year % 400)) -eq 0 ]]  || ( [[ $(($year % 4)) -eq 0 ]] && [[ $(($year % 100)) -ne 0 ]] )  ; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+function is_sudo_executable() {
+
+    timeout --signal=2 1 sudo -l >/dev/null 2>&1
+}
+
+function is_sudo_root() {
+
+    if [[ -n "$SUDO_USER" ]] && [[ -n "$SUDO_UID" ]] && [[ -n "$SUDO_GID" ]] && [[ -n "$SUDO_COMMAND" ]] && [[ $USER = "root" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+function is_stdin() {
+
+    if [[ -t 0 ]]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+
 
 # utility functions
 function abs2rel() {
@@ -93,76 +189,6 @@ function vartype() {
     fi
 }
 
-# check functions
-function check_dependency() {
-
-    local cmd=$(getdata "$@")
-    which $cmd >/dev/null 2>&1
-}
-
-function has_bom() {
-
-    if is_stdin; then
-        stdin | perl -CSDL -nle 'BEGIN{ $exit = 1 }{ $exit = 0 if /^\x{feff}/; exit $exit }'
-    else
-        if [[ -f $1 ]]; then
-            # for file
-            local file=$1
-            perl -CSDL -nle 'BEGIN{ $exit = 1} { $exit = 0 if /^\x{feff}/; exit $exit }' $file
-        else
-            error "argument is not file."
-        fi
-    fi
-}
-
-function is_stdin() {
-
-    if [[ -t 0 ]]; then
-        return 1
-    else
-        return 0
-    fi
-}
-
-function is_empty_dir() {
-
-    local dir=$1
-    if [[ ! -d $dir ]]; then
-        return 1
-    fi
-    local res=$(ls $dir)
-    if [[ -z "$res" ]]; then
-        return 0
-    fi
-    return 1
-}
-
-function is_sudo_executable() {
-
-    timeout --signal=2 1 sudo -l >/dev/null 2>&1
-}
-
-function is_sudo_root() {
-
-    if [[ -n "$SUDO_USER" ]] && [[ -n "$SUDO_UID" ]] && [[ -n "$SUDO_GID" ]] && [[ -n "$SUDO_COMMAND" ]] && [[ $USER = "root" ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-function is_leap_year() {
-
-    local year=$1
-    year=${year:-$(date "+%Y")}
-
-    if  [[ $(($year % 400)) -eq 0 ]]  || ( [[ $(($year % 4)) -eq 0 ]] && [[ $(($year % 100)) -ne 0 ]] )  ; then
-        return 0
-    else
-        return 1
-    fi
-}
-
 # convert/format functions
 function comma() {
 
@@ -213,6 +239,18 @@ function ltrim() {
     echo "$str" | sed -e "s/^\s+//"
 }
 
+function split() {
+
+    local sep=$1
+    local line=""
+    if is_stdin; then
+        read line
+    else
+        line=$2
+    fi
+    echo $line | tr "$sep" "\n"
+}
+
 function arrayjoin() {
 
     local sep=$1
@@ -221,87 +259,8 @@ function arrayjoin() {
     (local IFS=$sep; echo "${arr[*]}")
 }
 
+
 # file functions
-function guess() {
-    if is_stdin; then
-        stdin | perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess'
-    else
-        if [[ -f $1 ]]; then
-            local file=$1
-            perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess' $file
-        else
-            error "argument is not file."
-        fi
-    fi
-
-}
-
-function del_empty_lines() {
-
-    if is_stdin; then
-        stdin | sed "/^$/d"
-    else
-        if [[ -f $1 ]]; then
-            # for file
-            local file=$1
-            local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
-                inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
-                inplace_opt="-i.$(date +%Y$m%d)"
-            fi
-            sed $inplace_opt "/^$/d" $file
-        else
-            error "argument is not file."
-        fi
-    fi
-}
-
-function del_comment_lines() {
-
-    if is_stdin; then
-        stdin | sed -e "s/^${_DEFAULT_COMMENT}.*$//g"
-    else
-        if [[ -f $1 ]]; then
-            # for file
-            local file=$1
-            local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
-                inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
-                inplace_opt="-i.$(date +%Y$m%d)"
-            fi
-            sed $inplace_opt -e "s/^${_DEFAULT_COMMENT}.*$//g" $file
-        else
-            error "argument is not file."
-        fi
-    fi
-
-}
-
-function del_bom() {
-
-    if is_stdin; then
-        # -0777 is slurp mode
-        # -CSDL is https://pointoht.ti-da.net/e8367529.html
-        stdin | perl -0777 -CSDL -nlpe "s/^\x{feff}//"
-    else
-        if [[ -f $1 ]]; then
-            # for file
-            local file=$1
-            local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
-                inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
-                inplace_opt="-i.$(date +%Y%m%d)"
-            fi
-            perl $inplace_opt -CSDL -nlpe 's/^\x{feff}//' $file
-        else
-            error "argument is not file."
-        fi
-    fi
-}
-
 function align_linefeed() {
 
     if is_stdin; then
@@ -323,6 +282,102 @@ function align_linefeed() {
     fi
 }
 
+
+function del_empty_lines() {
+
+    if is_stdin; then
+        stdin | sed "/^$/d"
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_DEFAUKT_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y$m%d)"
+            fi
+            sed $inplace_opt "/^$/d" $file
+        else
+            error "argument is not file."
+        fi
+    fi
+}
+
+
+function del_comment_lines() {
+
+    if is_stdin; then
+        stdin | sed -e "s/^${_DEFAULT_COMMENT}.*$//g"
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y$m%d)"
+            fi
+            sed $inplace_opt -e "s/^${_DEFAULT_COMMENT}.*$//g" $file
+        else
+            error "argument is not file."
+        fi
+    fi
+
+}
+
+
+function del_bom() {
+
+    if is_stdin; then
+        # -0777 is slurp mode
+        # -CSDL is https://pointoht.ti-da.net/e8367529.html
+        stdin | perl -0777 -CSDL -nlpe "s/^\x{feff}//"
+    else
+        if [[ -f $1 ]]; then
+            # for file
+            local file=$1
+            local inplace_opt=""
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
+                inplace_opt="-i"
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
+                inplace_opt="-i.$(date +%Y%m%d)"
+            fi
+            perl $inplace_opt -CSDL -nlpe 's/^\x{feff}//' $file
+        else
+            error "argument is not file."
+        fi
+    fi
+}
+
+
+function guess() {
+    if is_stdin; then
+        stdin | perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess'
+    else
+        if [[ -f $1 ]]; then
+            local file=$1
+            perl -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlE '$ref = guess_encoding($_); $guess = ref($ref) ? $ref->name : $ref; say $guess' $file
+        else
+            error "argument is not file."
+        fi
+    fi
+
+}
+
+
+function mtime() {
+
+	local file=$1
+    if [[ ! -f $file ]]; then
+        error "argument is not file."
+		return 1
+	fi
+	stat --format "%Y" $file
+}
+
+
 function to_utf8() {
 
     if is_stdin; then
@@ -332,9 +387,9 @@ function to_utf8() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y%m%d)"
             fi
             perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "utf8")' $file
@@ -353,9 +408,9 @@ function to_sjis() {
             # for file
             local file=$1
             local inplace_opt=""
-            if [[ $_FILE_INPLACE_MODE -eq 1  ]]; then
+            if [[ $_DEFAULT_FILE_INPLACE_MODE -eq 1  ]]; then
                 inplace_opt="-i"
-            elif [[ $_FILE_INPLACE_MODE -eq 2 ]]; then
+            elif [[ $_DEFAULT_FILE_INPLACE_MODE -eq 2 ]]; then
                 inplace_opt="-i.$(date +%Y%m%d)"
             fi
             perl $inplace_opt -MEncode  -MEncode::Guess=euc-jp,shiftjis,7bit-jis -0777 -nlpe '$ref = guess_encoding($_); Encode::from_to($_, $ref->name, "shiftjis")' $file
@@ -365,22 +420,7 @@ function to_sjis() {
     fi
 }
 
-
-
-
 # date functions
-function today() {
-    datetime
-}
-
-function yesterday() {
-    datetime -d "1 day ago"
-}
-
-function tomorrow() {
-    datetime -d "1 day"
-}
-
 function firstday_on_current_month() {
     date "+%Y-%m-01"
 }
@@ -405,6 +445,92 @@ function lastday_on_next_month() {
     date "+%Y-%m-%d" -d "$(date +%Y-%m-01) 2 month 1 days ago"
 }
 
+function leap_years() {
+
+	local year=$_DEFAULT_LEAP_YEAR_MIN
+	while [[ $year -le $_DEFAULT_LEAP_YEAR_MAX ]]; do
+		if is_leap_year $year; then
+			echo $year
+		fi
+		year=$(($year + 4))
+	done
+}
+
+function holidays() {
+
+    local sep=","
+    local current_year=$(date +%Y)
+    (
+    syukujitsu_csv | tail -n +2 | while read line; do
+        if [[ -n "${_DEFAULT_HOLIDAY_YEARS}" ]] ; then
+            echo $line | egrep -q  "^(${_DEFAULT_HOLIDAY_YEARS})"
+            if [[ $? -ne 0 ]]; then
+                continue
+            fi
+        fi
+        local array=($(echo $line | split $sep))
+        echo ${array[0]} ${array[1]} ${array[2]}
+    done
+    ) | column --table --table-columns DATE,WEEKDAY,DESC
+}
+
+
+function syukujitsu_csv() {
+
+    _get_syukujitsu_csv >/dev/null
+    cat $_SYUKUJITSU_LOCAL_CSV
+}
+
+
+function today() {
+    datetime
+}
+
+
+function tomorrow() {
+    datetime -d "1 day"
+}
+
+
+function yesterday() {
+    datetime -d "1 day ago"
+}
+
+
+function _get_syukujitsu_csv() {
+
+    local download=0
+    if [[ ! -d $_APP_CACHE_DIR ]]; then
+        mkdir -p $_APP_CACHE_DIR
+    fi
+    test -f $_SYUKUJITSU_LOCAL_CSV
+    if [[ $? -eq 0 ]]; then
+        if [[ $(( $(epoch) - $(mtime $_SYUKUJITSU_LOCAL_CSV) )) -gt $_DEFAULT_TTL ]]; then
+            download=1
+        fi
+    else
+        download=1
+    fi
+
+    if [[ $download -eq 1 ]]; then
+        get "${_SYUKUJITSU_CSV}" | to_utf8 >"${_SYUKUJITSU_LOCAL_CSV}.org"
+        local i=0
+        cat "${_SYUKUJITSU_LOCAL_CSV}.org" | while read line; do
+            if [[ $i -eq 0 ]]; then
+                echo "国民の祝日・休日月日,曜日,国民の祝日・休日名称"
+            else
+                local array1=($(echo $line | split ","))
+                local weekday_name=$(LANG=C date +%a -d "$(echo ${array1[0]} | cut -d"," -f1)")
+                local array2=($(echo ${array1[0]} | split "/"))
+                printf "%04d/%02d/%02d,%s,%s\n" ${array2[0]} ${array2[1]} ${array2[2]} $weekday_name "${array1[1]}"
+            fi
+            i=$(( $i + 1 ))
+        done | tee $_SYUKUJITSU_LOCAL_CSV
+    fi
+}
+
+
+
 # string functions
 function rand_string() {
 
@@ -413,12 +539,14 @@ function rand_string() {
     _rand_string_from_list "${_RANDSTR_LOWER_WORDS}${_RANDSTR_UPPER_WORDS}${_RANDSTR_NUMBERS}" $length
 }
 
+
 function rand_string_with_syms() {
 
     local length=$1
     length=${length:-$_DEFAULT_RANDSTR_LENGTH}
     _rand_string_from_list "${_RANDSTR_LOWER_WORDS}${_RANDSTR_UPPER_WORDS}${_RANDSTR_NUMBERS}${_RANDSTR_SYMBOLS}" $length
 }
+
 
 function _rand_string_from_list() {
 
@@ -438,19 +566,8 @@ function _rand_string_from_list() {
 }
 
 
+
 # http functions
-function urlencode() {
-
-    local str=$(getdata "$@")
-    perl -lE '$_ = $ARGV[0]; s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg; say' "$str"
-}
-
-function urldecode() {
-
-    local str=$(getdata "$@")
-    perl -lE '$_ = $ARGV[0];  s/%([0-9a-f]{2})/sprintf("%s", pack("H2", $1))/eig; say' "$str"
-}
-
 function querystring() {
 
     local k=""
@@ -470,12 +587,14 @@ function querystring() {
     arrayjoin "&" "${pairs[@]}"
 }
 
+
 function http_auth_string() {
 
     local user=$1
     local password=$2
     echo -n "${user}:${password}" | openssl enc -e -base64
 }
+
 
 function http_auth_header() {
 
@@ -484,15 +603,18 @@ function http_auth_header() {
     echo Authorization: Basic $(make_basic_auth_string $user $password)
 }
 
+
 function http_ua_string() {
 
     echo "$_APP_NAME/$_APP_VERSION ($(uname -srp))"
 }
 
+
 function http_ua_header() {
 
     echo "User-Agent: $(http_ua_string)"
 }
+
 
 function http_perf() {
     local url=$1
@@ -503,6 +625,24 @@ function http_perf() {
     done
     ) | column --table --table-columns WRITE-OUT,VALUE
 }
+
+
+function urldecode() {
+
+    local str=$(getdata "$@")
+    perl -lE '$_ = $ARGV[0];  s/%([0-9a-f]{2})/sprintf("%s", pack("H2", $1))/eig; say' "$str"
+}
+
+
+function urlencode() {
+
+    local str=$(getdata "$@")
+    perl -lE '$_ = $ARGV[0]; s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg; say' "$str"
+}
+
+
+
+
 
 ## openssl functions
 function expires_cert() {
@@ -529,6 +669,7 @@ function expires_https_cert() {
     local https_host=$(getdata "$@")
     openssl s_client -connect ${https_host}:${_DEFAULT_HTTPS_PORT} -servername ${https_host} -showcerts -tls1_2 </dev/null 2>/dev/null | expires_cert
 }
+
 
 ## color function
 function bg_color() {
@@ -611,7 +752,7 @@ alias txf="tar --ignore-failed-read -pxvf"
 alias g="git"
 alias epoch="date +%s"
 alias datetime="date --iso-8601=seconds"
-alias curl="curl -H \"$(http_ua_header)\""
+alias curl="curl -sfS -H \"$(http_ua_header)\""
 alias get="curl -XGET "
 alias post="curl -XPOST "
 alias put="curl -XPUT "
