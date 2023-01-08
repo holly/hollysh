@@ -4,9 +4,9 @@ REPOSITORY_URL=https://github.com/holly/hollysh.git
 INSTALL_DIR=$HOME/hollysh
 ADD_LINE1="## add holly.sh load settings to your .bashrc or .zshrc"
 ADD_LINE2="export HOLLYSH=\$HOME/hollysh"
-ADD_LINE3="source \$HOLLYSH/holly.sh"
+ADD_LINE3="source \$HOLLYSH/init.sh"
 DEPENDENCY_COMMANDS=(bc curl make strace git jq nc)
-DEPENDENCY_COMMANDS2=(batcat rg)
+DEPENDENCY_COMMANDS2=(bat rg)
 
 echo "# check dependency commands: ${DEPENDENCY_COMMANDS[@]}"
 for cmd in ${DEPENDENCY_COMMANDS[@]}; do
