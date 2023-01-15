@@ -640,6 +640,13 @@ function http_perf() {
     ) | column --table --table-columns WRITE-OUT,VALUE
 }
 
+function ttfb() {
+
+    local url=$1
+    _curlw $url | jq -r ".time_starttransfer"
+}
+
+
 
 function urldecode() {
 
@@ -763,13 +770,10 @@ alias grep='grep --color=auto -I'
 alias strace="strace -s 1024 -tt -f -T"
 alias tcf="tar --exclude-backups --exclude=\"*.swp\" --exclude=\"*.tmp\" --exclude=\"*.org\" --exclude=\"*.pid\" --exclude=\"lock\" --exclude=\"*~\" --ignore-failed-read --one-file-system -pcvf"
 alias txf="tar --ignore-failed-read -pxvf"
-alias g="git"
 alias epoch="date +%s"
 alias datetime="date --iso-8601=seconds"
-alias curl="curl -sfS -H \"$(http_ua_header)\""
+alias curl="curl -sfSL -H \"$(http_ua_header)\""
 alias get="curl -XGET "
 alias post="curl -XPOST "
 alias put="curl -XPUT "
 alias _curlw="curl -sfL -o /dev/null -w '%{json}'"
-alias tmux='tmux -u'
-alias ta='tmux attach'
