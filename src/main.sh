@@ -179,6 +179,18 @@ function error2() {
     return 1
 }
 
+function warn() {
+
+    local str=$1
+    fg_yellow $str
+}
+
+function warn2() {
+
+    local str=$1
+    bg_yellow $str
+}
+
 function vartype() {
 
     local var=$(getdata "$@")

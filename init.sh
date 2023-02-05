@@ -1,8 +1,8 @@
-source ${HOLLYSH}/rc/main
+source ${HOLLYSH}/src/main.sh
 
-for cmd in aws terraform docker ; do
-    if check_dependency $cmd && [[ -f "${HOLLYSH}/rc/${cmd}rc" ]]; then
-        source "${HOLLYSH}/rc/${cmd}rc"
+for cmd in git aws terraform docker ; do
+    if check_dependency $cmd && [[ -f "${HOLLYSH}/src/${cmd}.sh" ]]; then
+        source "${HOLLYSH}/src/${cmd}.sh"
     fi
 done
 
